@@ -50,7 +50,30 @@ const AttendanceReports = () => {
       
       console.log('🔍 Query params:', queryParams.toString());
       
-      // Fetch real attendance data from the faculty reports API
+      // First get subjects for the dropdown - do this first as it's less likely to fail
+      try {
+        const subjectsRes = await api.get('/subjects');
+        console.log('📚 Subjects API response:', subjectsRes);
+        const subjectsData = subjectsRes.data || subjectsRes;
+        if (subjectsData.success && subjectsData.data) {
+          setSubjects(subjectsData.data);
+        } else if (Array.isArray(subjectsData)) {
+          setSubjects(subjectsData);
+        } else {
+          console.warn('📚 Subjects API returned unexpected format:', subjectsData);
+          setSubjects([]);
+        }
+      } catch (subjectError) {
+        console.warn('📚 Failed to fetch subjects:', subjectError.message);
+        // Set default subjects if API fails
+        setSubjects([
+          { _id: 'default1', code: 'MATH101', name: 'Mathematics' },
+          { _id: 'default2', code: 'ENG101', name: 'English' },
+          { _id: 'default3', code: 'CS101', name: 'Computer Science' }
+        ]);
+      }
+      
+      // Now fetch real attendance data from the faculty reports API
       const reportsResponse = await api.get(`/attendance/faculty/reports?${queryParams.toString()}`);
       console.log('📁 Faculty reports API response:', reportsResponse);
       
@@ -66,10 +89,6 @@ const AttendanceReports = () => {
       
       console.log('📁 Attendance records:', records.length);
       console.log('📁 Subject summary:', summary.length);
-      
-      // Also get subjects for the dropdown
-      const subjectsRes = await api.get('/subjects');
-      setSubjects(subjectsRes.data || subjectsRes);
       
       // Process attendance data for charts
       const processedAttendanceData = processAttendanceForChart(records);
@@ -106,7 +125,27 @@ const AttendanceReports = () => {
       
     } catch (error) {
       console.error('❌ Error fetching faculty reports data:', error);
-      console.error('❌ Error details:', error.response?.data || error.message);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error response data:', error.response?.data);
+      console.error('❌ Error response status:', error.response?.status);
+      console.error('❌ Full error object:', error);
+      
+      // Provide more specific error information
+      let errorMessage = 'Failed to fetch reports';
+      if (error.response?.status === 401) {
+        errorMessage = 'Authentication failed - please login again';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Access denied - insufficient permissions';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Reports endpoint not found';
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      console.error('❌ Processed error message:', errorMessage);
       
       // Set empty data on error
       setAttendanceData([]);
