@@ -73,6 +73,7 @@ class ApiService {
     const url = `${this.baseURL}${endpoint}`;
     const config = {
       headers: this.getAuthHeaders(),
+      timeout: 10000, // 10 seconds timeout
       ...options,
     };
 
@@ -80,7 +81,17 @@ class ApiService {
     console.log('📝 Request config:', config);
 
     try {
-      const response = await fetch(url, config);
+      // Create a fetch request with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), config.timeout || 10000);
+      
+      const response = await fetch(url, {
+        ...config,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
       console.log('📡 Response status:', response.status);
       console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
       
@@ -88,7 +99,11 @@ class ApiService {
       console.log('📦 Response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        const errorMessage = data.message || `HTTP error! status: ${response.status}`;
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        error.response = { data, status: response.status };
+        throw error;
       }
 
       return data;
@@ -98,6 +113,13 @@ class ApiService {
       console.error('⚙️ Config:', config);
       console.error('💥 Error:', error);
       
+      // Handle different types of errors
+      if (error.name === 'AbortError') {
+        const timeoutError = new Error('Request timeout. Server may be slow or unavailable.');
+        timeoutError.name = 'TimeoutError';
+        throw timeoutError;
+      }
+      
       // Check if it's a network/CORS error
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         console.error('🚫 This looks like a CORS or network connectivity issue');
@@ -105,6 +127,11 @@ class ApiService {
         console.error('   1. Check if backend is running and accessible');
         console.error('   2. Verify CORS configuration allows your domain');
         console.error('   3. Check network connectivity to:', this.baseURL);
+        
+        const networkError = new Error('Failed to connect to server. Please check your network connection and ensure the server is running.');
+        networkError.name = 'NetworkError';
+        networkError.originalError = error;
+        throw networkError;
       }
       
       throw error;

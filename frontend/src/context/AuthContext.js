@@ -60,10 +60,20 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     try {
       setLoading(true);
+      console.log('🔐 Attempting login for:', credentials.email);
+      
       const response = await apiService.login(credentials.email, credentials.password);
+      console.log('📈 Login response received:', response);
       
       if (response.success) {
         const { token, user: userData } = response;
+        
+        if (!token || !userData) {
+          console.error('❌ Invalid response format - missing token or user data');
+          return { success: false, message: 'Invalid response from server' };
+        }
+        
+        console.log('✅ Login successful for:', userData.email, 'Role:', userData.role);
         
         // Store in localStorage
         localStorage.setItem('token', token);
@@ -72,11 +82,30 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
         return { success: true };
       } else {
+        console.log('❌ Login failed:', response.message);
         return { success: false, message: response.message || 'Login failed' };
       }
     } catch (error) {
-      console.error('Login error:', error);
-      const message = error.message || 'Network error. Please try again.';
+      console.error('❌ Login error details:', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+        cause: error.cause
+      });
+      
+      let message = 'Network error. Please try again.';
+      
+      // Provide more specific error messages
+      if (error.message.includes('Failed to fetch')) {
+        message = 'Cannot connect to server. Please check your network connection and try again.';
+      } else if (error.message.includes('NetworkError')) {
+        message = 'Network error. Please check your internet connection.';
+      } else if (error.message.includes('TypeError')) {
+        message = 'Connection error. Please make sure the server is running.';
+      } else if (error.message) {
+        message = error.message;
+      }
+      
       return { success: false, message };
     } finally {
       setLoading(false);
