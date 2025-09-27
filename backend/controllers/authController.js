@@ -78,41 +78,80 @@ const register = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  // Check if user exists and get password
-  const user = await User.findOne({ email }).select('+password');
+    console.log('🔐 Login attempt for:', email);
+    console.log('🔍 Database connection state:', require('mongoose').connection.readyState);
 
-  if (!user) {
-    return res.status(401).json({
+    // Check if user exists and get password
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user) {
+      console.log('❌ User not found:', email);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    console.log('✅ User found:', user.email, 'Role:', user.role);
+
+    // Check if account is active
+    if (!user.isActive) {
+      console.log('❌ User account is inactive:', email);
+      return res.status(401).json({
+        success: false,
+        message: 'Account has been deactivated'
+      });
+    }
+
+    // Check password
+    const isPasswordValid = await user.comparePassword(password);
+
+    if (!isPasswordValid) {
+      console.log('❌ Invalid password for:', email);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    console.log('✅ Password valid for:', email);
+
+    // Update last login - make this operation more robust
+    try {
+      await User.findByIdAndUpdate(
+        user._id,
+        { lastLogin: new Date() },
+        { validateBeforeSave: false, new: false }
+      );
+      console.log('✅ Last login updated for:', email);
+    } catch (updateError) {
+      console.warn('⚠️ Failed to update last login (non-critical):', updateError.message);
+      // Don't fail login if this update fails
+    }
+
+    console.log('🚀 Sending token response for:', email);
+    sendTokenResponse(user, 200, res, 'Login successful');
+    
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Handle specific database connection errors
+    if (error.name === 'MongooseError' || error.name === 'MongoError') {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection issue. Please try again.'
+      });
+    }
+    
+    return res.status(500).json({
       success: false,
-      message: 'Invalid credentials'
+      message: 'Internal server error during login'
     });
   }
-
-  // Check if account is active
-  if (!user.isActive) {
-    return res.status(401).json({
-      success: false,
-      message: 'Account has been deactivated'
-    });
-  }
-
-  // Check password
-  const isPasswordValid = await user.comparePassword(password);
-
-  if (!isPasswordValid) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid credentials'
-    });
-  }
-
-  // Update last login
-  user.lastLogin = new Date();
-  await user.save({ validateBeforeSave: false });
-
-  sendTokenResponse(user, 200, res, 'Login successful');
 });
 
 // @desc    Logout user
