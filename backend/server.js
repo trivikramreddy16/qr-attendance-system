@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 
-const connectDB = require('./config/database');
+const { connectDB, checkDBHealth } = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 
 // Route imports
@@ -86,11 +86,20 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Server is healthy',
+  const dbHealth = checkDBHealth();
+  const status = dbHealth.isConnected ? 200 : 503;
+  
+  res.status(status).json({
+    success: dbHealth.isConnected,
+    message: dbHealth.isConnected ? 'Server is healthy' : 'Database connection issue',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
+    database: {
+      status: dbHealth.state,
+      connected: dbHealth.isConnected
+    },
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage()
   });
 });
 
